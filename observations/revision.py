@@ -1,7 +1,8 @@
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from campaign.manifest import Manifest
+from observations.candidates import CandidateBinding, parse_candidate_bindings
 from observations.coverage import validate_coverage
 from observations.intake import TrialEvidence, parse_trials
 from observations.repository import ObservationRepository
@@ -14,6 +15,7 @@ class FrozenRevision:
     station_id: str
     capacity: int
     trials: tuple[TrialEvidence, ...]
+    candidates: tuple[CandidateBinding, ...] = field(default=())
 
 
 def freeze(
@@ -21,12 +23,16 @@ def freeze(
     manifest: Manifest,
     station_id: str,
     rows: Iterable[Mapping[str, object]],
+    candidates: Iterable[Mapping[str, object]] = (),
 ) -> FrozenRevision:
     capacity = manifest.capacity_for(station_id)
     trials = parse_trials(rows)
     validate_coverage(trials, capacity)
-    revision_id = repository.save_frozen(manifest.batch_id, station_id, capacity, trials)
-    return FrozenRevision(revision_id, manifest.batch_id, station_id, capacity, trials)
+    bindings = parse_candidate_bindings(candidates, trials)
+    revision_id = repository.save_frozen(
+        manifest.batch_id, station_id, capacity, trials, bindings
+    )
+    return FrozenRevision(revision_id, manifest.batch_id, station_id, capacity, trials, bindings)
 
 
 def read_frozen_revision(repository: ObservationRepository, revision_id: int) -> FrozenRevision:

@@ -17,11 +17,14 @@ from observations.repository import ObservationRepository
 from observations.revision import freeze
 from receipt.intake import receive
 from receipt.repository import ReceiptRepository
+from receipt.retest_intake import receive_retest
 from review.publication import publish
 from review.readback import fetch
 from review.repository import ReportRepository
+from review.retest_publication import publish_retest
+from review.retest_readback import fetch_retest
 from review.thresholds import Threshold
-from station.issuance import issue
+from station.issuance import issue, issue_retest
 from station.repository import StationRepository
 from storage import open_database
 
@@ -136,6 +139,14 @@ def _fetch(args: argparse.Namespace) -> None:
 
 def _demo(_: argparse.Namespace) -> None:
     fixture = _load(_ROOT / 'samples' / 'demo.json')
+    # Each single-piece station binds its only trial under an opaque candidate id.
+    candidate_bindings = {
+        allocation['station_id']: [
+            {'candidate_id': f"C-{allocation['station_id']}", 'trial_id': trial['trial_id']}
+            for trial in fixture['trials'][allocation['station_id']]
+        ]
+        for allocation in fixture['allocations']
+    }
     with TemporaryDirectory(prefix='blind-review-') as directory:
         root = Path(directory)
         center_path = root / 'center.sqlite'
@@ -144,24 +155,65 @@ def _demo(_: argparse.Namespace) -> None:
                 campaign, fixture['batch_id'], _allocations(fixture['allocations']), fixture['sealed_count']
             )
             envelopes = []
+            companion_envelopes = []
             for index, allocation in enumerate(manifest.allocations):
                 site_path = root / f'site-{index}.sqlite'
                 station_id = allocation.station_id
                 with _site(site_path) as (observations, station):
-                    revision = freeze(observations, manifest, station_id, fixture['trials'][station_id])
+                    revision = freeze(
+                        observations,
+                        manifest,
+                        station_id,
+                        fixture['trials'][station_id],
+                        candidate_bindings[station_id],
+                    )
                     envelopes.append(issue(observations, station, revision.revision_id))
+                    companion_envelopes.append(
+                        issue_retest(observations, station, revision.revision_id)
+                    )
+                # The station library is removed before the center accepts anything.
                 site_path.unlink()
 
             receipt_ids = [receive(campaign, receipts, manifest.batch_id, text) for text in envelopes]
+            retest_receipt_ids = [
+                receive_retest(receipts, parent_id, companion)
+                for parent_id, companion in zip(receipt_ids, companion_envelopes, strict=True)
+            ]
             reveal(campaign, manifest.batch_id)
             report, receipt = publish(
                 campaign, receipts, reports, manifest.batch_id, receipt_ids, _thresholds(fixture['thresholds'])
             )
+            candidate_requests = [
+                {'retest_receipt_id': retest_id, 'candidate_id': f'C-{allocation.station_id}'}
+                for retest_id, allocation in zip(
+                    retest_receipt_ids, manifest.allocations, strict=True
+                )
+            ]
+            suggestion, suggestion_receipt = publish_retest(
+                receipts, reports, report.report_id, candidate_requests
+            )
+
+        # Reopen the center library and collect both archives by number only.
         with _center(center_path) as (_, _, reports):
             original, original_receipt = fetch(reports, report.report_id)
+            archived_suggestion, archived_retest_receipt = fetch_retest(
+                reports, suggestion['suggestion_id']
+            )
         if (original, original_receipt) != (report, receipt):
             raise ValueError('reopened center returned a different publication')
-        _emit({'report': original, 'receipt': original_receipt})
+        if (archived_suggestion, archived_retest_receipt) != (
+            suggestion,
+            suggestion_receipt,
+        ):
+            raise ValueError('reopened center returned a different retest suggestion')
+        _emit({
+            'report': original,
+            'receipt': original_receipt,
+            'retest': {
+                'suggestion': archived_suggestion,
+                'receipt': archived_retest_receipt,
+            },
+        })
 
 
 def _verify(_: argparse.Namespace) -> int:

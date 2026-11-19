@@ -20,6 +20,17 @@ CREATE TABLE IF NOT EXISTS publication_receipts (
     receipt_id INTEGER PRIMARY KEY,
     report_id INTEGER NOT NULL UNIQUE REFERENCES reports(report_id)
 );
+CREATE TABLE IF NOT EXISTS retest_suggestions (
+    suggestion_id INTEGER PRIMARY KEY,
+    report_id INTEGER NOT NULL REFERENCES reports(report_id),
+    base_loss TEXT NOT NULL,
+    candidates_json TEXT NOT NULL,
+    best_json TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS retest_receipts (
+    receipt_id INTEGER PRIMARY KEY,
+    suggestion_id INTEGER NOT NULL UNIQUE REFERENCES retest_suggestions(suggestion_id)
+);
 '''
 
 
@@ -95,3 +106,70 @@ class ReportRepository:
             RiskProbabilities(*(Fraction(value) for value in json.loads(probabilities))),
         )
         return report, PublicationReceipt(receipt_id, report_id)
+
+    def save_retest_suggestion(
+        self,
+        report_id: int,
+        base_loss_value: Fraction,
+        candidates: tuple[dict, ...],
+        best: tuple[dict, ...],
+    ) -> tuple[dict, dict]:
+        candidates_json = json.dumps(candidates, sort_keys=True, default=self._fraction_default)
+        best_json = json.dumps(best, sort_keys=True, default=self._fraction_default)
+        with write_transaction(self.connection):
+            suggestion_id = self.connection.execute(
+                '''INSERT INTO retest_suggestions
+                   (report_id, base_loss, candidates_json, best_json)
+                   VALUES (?, ?, ?, ?)''',
+                (report_id, str(base_loss_value), candidates_json, best_json),
+            ).lastrowid
+            receipt_id = self.connection.execute(
+                'INSERT INTO retest_receipts (suggestion_id) VALUES (?)', (suggestion_id,)
+            ).lastrowid
+        suggestion = {
+            'suggestion_id': suggestion_id,
+            'report_id': report_id,
+            'base_loss': base_loss_value,
+            'candidates': candidates,
+            'best': best,
+        }
+        receipt = {'receipt_id': receipt_id, 'suggestion_id': suggestion_id}
+        return suggestion, receipt
+
+    def load_retest_suggestion(self, suggestion_id: int) -> tuple[dict, dict] | None:
+        if suggestion_id > 2**63 - 1:
+            return None
+        row = self.connection.execute(
+            '''SELECT s.report_id, s.base_loss, s.candidates_json, s.best_json, r.receipt_id
+               FROM retest_suggestions AS s
+               JOIN retest_receipts AS r ON r.suggestion_id = s.suggestion_id
+               WHERE s.suggestion_id = ?''',
+            (suggestion_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        report_id, base_loss_value, candidates_json, best_json, receipt_id = row
+        candidates = tuple(self._load_candidate(entry) for entry in json.loads(candidates_json))
+        best = tuple(json.loads(best_json))
+        suggestion = {
+            'suggestion_id': suggestion_id,
+            'report_id': report_id,
+            'base_loss': Fraction(base_loss_value),
+            'candidates': candidates,
+            'best': best,
+        }
+        receipt = {'receipt_id': receipt_id, 'suggestion_id': suggestion_id}
+        return suggestion, receipt
+
+    @staticmethod
+    def _fraction_default(value):
+        if isinstance(value, Fraction):
+            return str(value)
+        raise TypeError(f'unsupported stored value {type(value).__name__}')
+
+    @staticmethod
+    def _load_candidate(entry: dict) -> dict:
+        result = dict(entry)
+        for name in ('expected_loss', 'improvement'):
+            result[name] = Fraction(result[name])
+        return result

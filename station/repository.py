@@ -9,6 +9,10 @@ CREATE TABLE IF NOT EXISTS issued_pieces (
     issue_id TEXT NOT NULL UNIQUE,
     envelope TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS issued_retest_pieces (
+    revision_id INTEGER PRIMARY KEY REFERENCES frozen_revisions(revision_id),
+    envelope TEXT NOT NULL
+);
 '''
 
 
@@ -33,5 +37,22 @@ class StationRepository:
             self.connection.execute(
                 'INSERT INTO issued_pieces (revision_id, issue_id, envelope) VALUES (?, ?, ?)',
                 (revision_id, issue_id, envelope),
+            )
+        return envelope
+
+    def get_retest_by_revision(self, revision_id: int) -> str | None:
+        row = self.connection.execute(
+            'SELECT envelope FROM issued_retest_pieces WHERE revision_id = ?', (revision_id,)
+        ).fetchone()
+        return None if row is None else row[0]
+
+    def save_retest(self, revision_id: int, envelope: str) -> str:
+        with write_transaction(self.connection):
+            existing = self.get_retest_by_revision(revision_id)
+            if existing is not None:
+                return existing
+            self.connection.execute(
+                'INSERT INTO issued_retest_pieces (revision_id, envelope) VALUES (?, ?)',
+                (revision_id, envelope),
             )
         return envelope
