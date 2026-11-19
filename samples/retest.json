@@ -1,0 +1,33 @@
+{
+  "base_fixture": "accident.json",
+  "cases": {
+    "original": {
+      "candidate_bindings": {"A": [
+        {"candidate_id": "R-17", "trial_id": "a-1"},
+        {"candidate_id": "R-42", "trial_id": "a-2"}
+      ]},
+      "request_order": [["A", "R-17"], ["A", "R-42"]],
+      "expected": {"base_loss": "1/3", "expected_loss": ["1/6", "1/3"], "improvement": ["1/6", "0"], "best": [["A", "R-17"]]}
+    },
+    "swapped": {
+      "candidate_bindings": {"A": [
+        {"candidate_id": "R-17", "trial_id": "a-2"},
+        {"candidate_id": "R-42", "trial_id": "a-1"}
+      ]},
+      "request_order": [["A", "R-17"], ["A", "R-42"]],
+      "expected": {"base_loss": "1/3", "expected_loss": ["1/3", "1/6"], "improvement": ["0", "1/6"], "best": [["A", "R-42"]]}
+    },
+    "zero_and_tie": {
+      "defect_overrides": {"A": {"a-1": 0}},
+      "candidate_bindings": {
+        "A": [
+          {"candidate_id": "R-17", "trial_id": "a-1"},
+          {"candidate_id": "R-42", "trial_id": "a-2"}
+        ],
+        "B": [{"candidate_id": "S-08", "trial_id": "b-1"}]
+      },
+      "request_order": [["B", "S-08"], ["A", "R-17"], ["A", "R-42"]],
+      "expected": {"base_loss": "1/3", "expected_loss": ["0", "1/3", "0"], "improvement": ["1/3", "0", "1/3"], "best": [["B", "S-08"], ["A", "R-42"]]}
+    }
+  }
+}

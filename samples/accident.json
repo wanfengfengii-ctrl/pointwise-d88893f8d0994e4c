@@ -1,0 +1,13 @@
+{
+  "batch_id": "B-incident",
+  "sealed_count": 1,
+  "allocations": [{"station_id": "A", "capacity": 2}, {"station_id": "B", "capacity": 1}],
+  "trials": {
+    "A": [
+      {"trial_id": "a-1", "normal": 1, "defect": 3},
+      {"trial_id": "a-2", "normal": 1, "defect": 1}
+    ],
+    "B": [{"trial_id": "b-1", "normal": 1, "defect": 2}]
+  },
+  "thresholds": [{"station_id": "A", "minimum": 1}, {"station_id": "B", "minimum": 1}]
+}

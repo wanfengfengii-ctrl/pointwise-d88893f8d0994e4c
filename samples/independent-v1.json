@@ -1,0 +1,20 @@
+[
+  {
+    "version": 1,
+    "batch_id": "B-incident",
+    "station_id": "A",
+    "capacity": 2,
+    "issue_id": "external-A-01",
+    "revision_id": "external-revision-A",
+    "count_evidence": ["1", "4", "3"]
+  },
+  {
+    "version": 1,
+    "batch_id": "B-incident",
+    "station_id": "B",
+    "capacity": 1,
+    "issue_id": "external-B-01",
+    "revision_id": "external-revision-B",
+    "count_evidence": ["1", "2"]
+  }
+]
